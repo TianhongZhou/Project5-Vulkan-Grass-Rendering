@@ -11,6 +11,10 @@
 #define NUM_BUCKET 5
 #define MAX_DIST 15.0
 
+#define ORIENTATION_CULL 1
+#define FRUS_CULL 1
+#define DIST_CULL 1
+
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform CameraBufferObject {
@@ -132,21 +136,27 @@ void main() {
     vec3 camToBlade = v0 - camPos;
     vec3 viewDir = camToBlade - up * dot(camToBlade, up);
 
+#if ORIENTATION_CULL
     float angle = abs(dot(normalize(viewDir), t1));
     if (angle < ORIENTATION_THRESHOLD) {
         return;
     }
+#endif
 
+#if FRUS_CULL
     vec3 m = (1.0 / 4.0) * v0 * (1.0 / 2.0) * v1 * (1.0 / 4.0) * v2;
     if (!inFrus(v0) && !inFrus(v2) && !inFrus(m)) {
         return;
     }
+#endif
 
     float dproj = length(viewDir);
     
+#if DIST_CULL
     if ((gl_GlobalInvocationID.x % NUM_BUCKET) < int(floor(NUM_BUCKET * (1.0 - dproj / MAX_DIST)))) {
         return;
     }
+#endif
 
     culledBlades[atomicAdd(numBlades.vertexCount, 1)] = blades[gl_GlobalInvocationID.x];
 }
