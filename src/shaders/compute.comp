@@ -7,6 +7,10 @@
 #define WIND_STRENGTH 3.0
 #define WIND_FREQ 3.0
 
+#define ORIENTATION_THRESHOLD 0.9
+#define NUM_BUCKET 5
+#define MAX_DIST 15.0
+
 layout(local_size_x = WORKGROUP_SIZE, local_size_y = 1, local_size_z = 1) in;
 
 layout(set = 0, binding = 0) uniform CameraBufferObject {
@@ -58,6 +62,11 @@ layout(set = 2, binding = 2) buffer NumBlades {
 
 bool inBounds(float value, float bounds) {
     return (value >= -bounds) && (value <= bounds);
+}
+
+bool inFrus(vec3 pos) {
+    vec4 ccs = camera.proj * camera.view * vec4(pos, 1.0);
+    return inBounds(ccs.x, ccs.w) && inBounds(ccs.y, ccs.w) && inBounds(ccs.z, ccs.w);
 }
 
 void main() {
@@ -118,6 +127,26 @@ void main() {
     blade.v2.xyz = v2;
 
     blades[gl_GlobalInvocationID.x] = blade;
+
+    vec3 camPos = inverse(camera.view)[3].xyz;
+    vec3 camToBlade = v0 - camPos;
+    vec3 viewDir = camToBlade - up * dot(camToBlade, up);
+
+    float angle = abs(dot(normalize(viewDir), t1));
+    if (angle < ORIENTATION_THRESHOLD) {
+        return;
+    }
+
+    vec3 m = (1.0 / 4.0) * v0 * (1.0 / 2.0) * v1 * (1.0 / 4.0) * v2;
+    if (!inFrus(v0) && !inFrus(v2) && !inFrus(m)) {
+        return;
+    }
+
+    float dproj = length(viewDir);
+    
+    if ((gl_GlobalInvocationID.x % NUM_BUCKET) < int(floor(NUM_BUCKET * (1.0 - dproj / MAX_DIST)))) {
+        return;
+    }
 
     culledBlades[atomicAdd(numBlades.vertexCount, 1)] = blades[gl_GlobalInvocationID.x];
 }
